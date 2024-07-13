@@ -61,15 +61,18 @@ def paginated_results(url: str) -> dict:
         else:
             r = requests.get(url + '&' + pagination[pagination.find('page='):])
         all_r.append(r.json())
-        pagination = r.json()['pagination']['next_page']
+        pagination = r.json().get('pagination', {}).get('next_page')
         if pagination is None:
             break
-    return {
-        'data': [typedice for page in all_r for typedice in page['data']],
-        'subscription': all_r[-1]['subscription'],
-        'rate_limit': all_r[-1]['rate_limit'],
-        'timezone': all_r[-1]['timezone'],
-    }
+    if len(all_r) > 1:
+        return {
+            'data': [typedice for page in all_r for typedice in page['data']],
+            'subscription': all_r[-1]['subscription'],
+            'rate_limit': all_r[-1]['rate_limit'],
+            'timezone': all_r[-1]['timezone'],
+        }
+    else:
+        return all_r[0]
 
 
 def name_to_id(var: int | str, endpoint: str):
@@ -109,14 +112,24 @@ def get_fixtures(
         date: Optional[ISODate] = None,
         team: Optional[str | int] = None,
         date_range_end: Optional[ISODate] = None,
-        vs_team: Optional[str | int] = None):
-    # TODO: Add Docstring
-
-    include = None  # Default Include for lists of games
+        vs_team: Optional[str | int] = None,
+        include: Optional[str] = None):
+    """
+    Function to retrieve fixture data using a variety of filter options.
+    :param fixture_id: Integer of a specific game ID
+    :param date: ISO Formatted date string (YYYY-MM-DD), if combined with date_range_end it's the earlier date.
+    :param team: String or an integer; if a string, will search for team by string/substring and request
+    :param date_range_end:
+    :param vs_team:
+    :param include:
+    :return:
+    """
 
     if fixture_id is not None:
         endpoint = f'fixtures/{fixture_id}'
-        include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details']
+        include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
+                   'participants',
+                   'scores', 'periods', 'ballCoordinates', 'xGFixture', 'formations']
     elif all(var is None for var in [date, team, date_range_end, vs_team]):
         endpoint = 'fixtures'
     elif all(var is None for var in [team, date_range_end, vs_team]) and date is not None:
@@ -131,36 +144,66 @@ def get_fixtures(
                     f'{name_to_id(vs_team, "teams")}')
     else:
         raise LookupError('Invalid combination of parameters:')
-    fixtures = requests.get(gen_url(endpoint, includes=include)).json()
+    fixtures = paginated_results(gen_url(endpoint, includes=include))  # .json()
+    # fixtures = requests.get(gen_url(endpoint, includes=include)).json()
+
+    # TODO: Pagination Results
 
     return fixtures
 
 
-def fixture_statistics_lookups(data):
-    for stat in data['data']['statistics']:
+def fixture_statistics_lookups(data: dict):
+    """
+    Update the 'type' field in each statistic with the corresponding value from TYPES_LOOKUP.
+
+    :param data: The input data dictionary, which should contain a 'statistics' list.
+    :return: The updated data dictionary with 'type' field values replaced.
+    """
+    for stat in data['statistics']:
         stat['type'] = TYPES_LOOKUP[stat['type_id']]
+    for event in data['events']:
+        event['type'] = TYPES_LOOKUP[event['type_id']]
+        if event['sub_type_id'] is not None:
+            event['subtype'] = TYPES_LOOKUP[event['sub_type_id']]
+        else:
+            event['subtype'] = None
     return data
 
 
-def fixture_lineup_detail_lookups(data):
-    for player in data['data']['lineups']:
+def fixture_lineup_detail_lookups(data: dict):
+    """
+    Update the 'type' field in each lineup player detail with the corresponding value from TYPES_LOOKUP.
+    :param data: The input data dictionary, which should contain a 'lineups' list with the
+    corresponding 'details' list nested inside.
+    :return: The updated data dictionary with 'type' field values replaced.
+    """
+    for player in data['lineups']:
         for stat in player['details']:
             stat['type'] = TYPES_LOOKUP[stat['type_id']]
     return data
 
-def fixture_lineup_lookups(data):
-    for player in data['data']['lineups']:
+
+def fixture_lineup_lookups(data: dict):
+    """
+    Update the 'type' field in each lineup player detail with the corresponding value from TYPES_LOOKUP.
+    :param data: The input data dictionary, which should contain a 'lineups' list
+    :return: The updated data dictionary with 'type' field values replaced.
+    """
+    for player in data['lineups']:
         player['lineup_type'] = TYPES_LOOKUP[player['type_id']]
         player['position'] = TYPES_LOOKUP[player['position_id']]
     return data
 
 
-
 def get_player(search=None):
+    """
+    Searches for a player using a search string, and returning the first result from an unsorted result set.
+    :param search: A string for searching by player name.
+    :return: A JSON/Dictionary of player data
+    """
     if search is None:
         raise ValueError('Please enter a search condition')
     if type(search) is str:
-        # TODO: Need a better search feedback process
         player = requests.get(gen_url(f'players/search/{search}')).json()
         if 'data' not in player.keys():
             raise LookupError('No result found for your search string')
@@ -225,10 +268,10 @@ if __name__ == '__main__':
     """
     # matchups = get_fixtures(team='fire', vs_team='st. louis')
 
-    one_game = get_fixtures(fixture_id=19051528)
+    one_game = get_fixtures(fixture_id=19051528)['data']
     one_game = fixture_statistics_lookups(one_game)
     one_game = fixture_lineup_detail_lookups(one_game)
     one_game = fixture_lineup_lookups(one_game)
 
-    # games = get_fixtures(date='2024-05-05')
+    games = get_fixtures(date='2024-05-25')
     # shaqiri = get_player('Shaqiri').json()
