@@ -41,25 +41,30 @@ def write_data(filename: str, data: Union[List[int], List[List]]):
             writer.writerow(data)
 
 
-def find_key_in_nested_dict(nested_dict, target_key):
-    for key, value in nested_dict.items():
-        if key == target_key:
-            return value
-        elif isinstance(value, dict):
-            result = find_key_in_nested_dict(value, target_key)
-            if result is not None:
-                return result
-
-
 def dict_lookup(list_of_dicts: list, *args):
     for row in list_of_dicts:
-        if all(find_key_in_nested_dict(row, key) == value for key, value in args):
+        if all([row[arg[0]]==arg[1] for arg in args]):
             return row
     return {}
 
 
+def unnest(nested_dict):
+    # TODO: Add recursiveness and handling for duplicate key names.
+    for row in nested_dict:
+        temp_dict = {}
+        for key in row.keys():
+            if type(row[key]) == dict:
+                for nested_key in row[key].keys():
+                    temp_dict[nested_key] = row[key][nested_key]
+        if len(temp_dict) > 0:
+            row.update(temp_dict)
+    return nested_dict
+
 def fixture_table(data):
-    fixture = [data[key] for key in ['id', 'name', 'starting_at', 'result_info']]
+    fixture = [data[key] for key in ['id', 'name', 'venue_id', 'starting_at', 'result_info']]
+
+    for datapoint in ['participants', 'scores', 'xgfixture']:
+        data[datapoint] = unnest(data[datapoint])
 
     home_team_id = dict_lookup(data['participants'], ('location', 'home'))['id']
     away_team_id = dict_lookup(data['participants'], ('location', 'away'))['id']
@@ -71,18 +76,18 @@ def fixture_table(data):
     performance = [
         [
             data['id'], home_team_id,
-            dict_lookup(data['formations'], ('location', 'home')).get('formation'),
-            dict_lookup(data['scores'], ('description', '1ST_HALF'), ('participant', 'home'))['score']['goals'],
-            dict_lookup(data['scores'], ('description', '2ND_HALF'), ('participant', 'home'))['score']['goals'],
-            dict_lookup(data['xgfixture'], ('location', 'home')).get('data', {}).get('value'),
+            dict_lookup(data['formations'], ('location', 'home'))['formation'] if len(data['formations']) > 0 else None,
+            dict_lookup(data['scores'], ('description', '1ST_HALF'), ('participant', 'home')).get('score', {'goals': None})['goals'],
+            dict_lookup(data['scores'], ('description', '2ND_HALF'), ('participant', 'home')).get('score', {'goals': None})['goals'],
+            dict_lookup(data['xgfixture'], ('location', 'home'))['data']['value'] if len(data['xgfixture']) > 0 else None,
             'home'
         ],
         [
             data['id'], away_team_id,
-            dict_lookup(data['formations'], ('location', 'away'))['formation'],
-            dict_lookup(data['scores'], ('description', '1ST_HALF'), ('participant', 'away'))['score']['goals'],
-            dict_lookup(data['scores'], ('description', '2ND_HALF'), ('participant', 'away'))['score']['goals'],
-            dict_lookup(data['xgfixture'], ('location', 'away')).get('data', {}).get('value'),
+            dict_lookup(data['formations'], ('location', 'away')).get('formation') if len(data['formations']) > 0 else None,
+            dict_lookup(data['scores'], ('description', '1ST_HALF'), ('participant', 'away')).get('score', {'goals': None})['goals'],
+            dict_lookup(data['scores'], ('description', '2ND_HALF'), ('participant', 'away')).get('score', {'goals': None})['goals'],
+            dict_lookup(data['xgfixture'], ('location', 'away'))['data']['value'] if len(data['xgfixture']) > 0 else None,
             'away'
         ]
     ]
@@ -90,11 +95,15 @@ def fixture_table(data):
 
 
 def output_data_table(data, function, output_directory='data', duplicate_remove=False):
-    fixture = function(data)
+    if data is not None:
+        fixture = function(data)
+    else:
+        fixture = function()
     for table_nm in fixture.keys():
-        write_data(f'{output_directory}/{table_nm}.csv', fixture[table_nm])
-        if duplicate_remove:
-            remove_duplicates(f'{output_directory}/{table_nm}.csv')
+        if len(fixture[table_nm]) > 0:
+            write_data(f'{output_directory}/{table_nm}.csv', fixture[table_nm])
+            if duplicate_remove:
+                remove_duplicates(f'{output_directory}/{table_nm}.csv')
 
 
 def event_table(data):
@@ -133,6 +142,18 @@ def player_performance_table(data):
     return {'player_performance': rows}
 
 
+def players_table():
+    players = sportmonk.all_players()
+    rows = [
+        [data['id'], data['name'],
+         data['nationality']['name'] if type(data['nationality']) is dict else None,
+         data['position']['name'] if type(data['position']) is dict else None,
+         data['detailedposition']['name'] if type(data['detailedposition']) is dict else None,
+         data['height'], data['weight'],
+         data['date_of_birth'], data['image_path']] for data in players['data']]
+    return {'players': rows}
+
+
 def test_single_game(fixture_id=19051563):
     game1 = sportmonk.get_fixtures(fixture_id=fixture_id)['data']
 
@@ -147,12 +168,11 @@ def test_single_game(fixture_id=19051563):
     return game1
 
 
-def test_game_range(date_start='2023-01-01', date_end='2024-06-01', team='Chicago Fire'):
+def test_game_range(date_start='2023-01-01', date_end='2024-06-01'):
     include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
                'participants',
                'scores', 'periods', 'ballCoordinates', 'xGFixture', 'formations']
-    games = sportmonk.get_fixtures(date=date_start, date_range_end=date_end,
-                                   team=team, include=include)
+    games = sportmonk.get_fixtures(date=date_start, date_range_end=date_end, include=include)
     variables = {}
     for fixture in games['data']:
 
@@ -166,6 +186,9 @@ def test_game_range(date_start='2023-01-01', date_end='2024-06-01', team='Chicag
 
 
 if __name__ == '__main__':
-    test_game_range()
-    # game = test_single_game()
+    # games = test_game_range(date_start='2024-02-01', date_end='2024-03-01')
+    # test_game_range()
+    game = test_single_game(18454566)
+    # players_table()
+    # output_data_table(None, players_table, output_directory='sample_data', duplicate_remove=True)
     event_dict = {}

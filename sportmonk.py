@@ -145,9 +145,6 @@ def get_fixtures(
     else:
         raise LookupError('Invalid combination of parameters:')
     fixtures = paginated_results(gen_url(endpoint, includes=include))  # .json()
-    # fixtures = requests.get(gen_url(endpoint, includes=include)).json()
-
-    # TODO: Pagination Results
 
     return fixtures
 
@@ -190,8 +187,8 @@ def fixture_lineup_lookups(data: dict):
     :return: The updated data dictionary with 'type' field values replaced.
     """
     for player in data['lineups']:
-        player['lineup_type'] = TYPES_LOOKUP[player['type_id']]
-        player['position'] = TYPES_LOOKUP[player['position_id']]
+        player['lineup_type'] = TYPES_LOOKUP[player['type_id']] if player['type_id'] is not None else 'N/A'
+        player['position'] = TYPES_LOOKUP[player['position_id']]  if player['position_id'] is not None else 'N/A'
     return data
 
 
@@ -209,7 +206,21 @@ def get_player(search=None):
             raise LookupError('No result found for your search string')
         print(f'Returning first result: {player["data"][0]["name"]}')
         search = player['data'][0]['id']
-    return requests.get(gen_url(f'players/{search}'))
+    return requests.get(gen_url(f'players/{search}',
+                                includes=['nationality', 'city', 'position', 'detailedPosition',
+                                          'transfers', 'transfers.fromTeam', 'transfers.toTeam',
+                                          'pendingTransfers',  'pendingTransfers.fromTeam', 'pendingTransfers.toTeam'
+                                          ])
+                        ).json()
+
+
+def all_players():
+    players = paginated_results(gen_url('players', product='core/',
+                                includes=['nationality', 'city', 'position', 'detailedPosition',
+                                          'transfers', 'transfers.fromTeam', 'transfers.toTeam',
+                                          'pendingTransfers',  'pendingTransfers.fromTeam', 'pendingTransfers.toTeam'
+                                          ]))
+    return players
 
 
 def update_lookup(file: dict, file_nm: str):
@@ -266,12 +277,23 @@ if __name__ == '__main__':
     """
     In Place for testing various endpoints during development. 
     """
-    # matchups = get_fixtures(team='fire', vs_team='st. louis')
+    # matchups = get_fixtures(team='fire', vs_team='cincinnati')
 
-    one_game = get_fixtures(fixture_id=19051528)['data']
-    one_game = fixture_statistics_lookups(one_game)
-    one_game = fixture_lineup_detail_lookups(one_game)
-    one_game = fixture_lineup_lookups(one_game)
-
-    games = get_fixtures(date='2024-05-25')
-    # shaqiri = get_player('Shaqiri').json()
+    # one_game = get_fixtures(fixture_id=19051528)['data']
+    # one_game = fixture_statistics_lookups(one_game)
+    # one_game = fixture_lineup_detail_lookups(one_game)
+    # one_game = fixture_lineup_lookups(one_game)
+    #
+    # games = get_fixtures(date='2024-05-25')
+    # shaqiri = get_player('Shaqiri')
+    # guti = get_player('Brian Gutierrez')
+    # p = all_players()
+    t = paginated_results(gen_url('teams', includes=[
+        'country', 'coaches.coach',
+        # 'seasons',
+        'activeSeasons',
+        'activeSeasons.stages',
+        # 'sidelinedHistory',
+        # 'statistics', 'trophies', 'socials'
+    ]))
+    # v = paginated_results(gen_url('venues', includes=['country', 'city']))
