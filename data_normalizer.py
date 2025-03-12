@@ -42,13 +42,42 @@ def write_data(filename: str, data: Union[List[int], List[List]]):
 
 
 def dict_lookup(list_of_dicts: list, *args):
+    """
+    Searches for a dictionary in a list of dictionaries that matches all specified
+    criteria given as key-value pairs.
+
+    The function iterates through the provided list of dictionaries and checks
+    whether all given key-value conditions are met in each dictionary. If a match
+    is found, the dictionary is returned. If no match is found, an empty dictionary
+    is returned.
+
+    :param list_of_dicts: A list containing dictionaries to be searched.
+    :param args: A variable number of key-value pairs to match against the
+        dictionaries in the list.
+    :return: The first dictionary that matches all the specified conditions, or an
+        empty dictionary if no matching dictionary is found.
+    """
     for row in list_of_dicts:
         if all([row[arg[0]]==arg[1] for arg in args]):
             return row
     return {}
 
 
-def unnest(nested_dict):
+def unnest(nested_dict: dict):
+    """
+    Unnests a dictionary structure by flattening nested dictionaries into the parent
+    dictionary-level. The function processes items within a list of dictionaries and
+    unwraps any detected nested dictionaries, appending their key-value pairs to
+    the immediate parent structure. Ensures no nested dictionary remains directly
+    nested after a single iteration.
+
+    :param nested_dict: A list of dictionaries containing potentially nested
+        dictionaries as values.
+    :type nested_dict: dict
+    :return: The modified list of dictionaries with all first-level nested dictionaries
+        unnested into their respective parent dictionary.
+    :rtype: dict
+    """
     # TODO: Add recursiveness and handling for duplicate key names.
     for row in nested_dict:
         temp_dict = {}
@@ -60,7 +89,14 @@ def unnest(nested_dict):
             row.update(temp_dict)
     return nested_dict
 
-def fixture_table(data):
+
+def fixture_table(data: dict):
+    """
+    Main function for parsing fixture level data from the API response. Shows game level data including teams,
+    scores, and home/away designation.
+    :param data: JSON response from the Fixture API endpoint.
+    :return: Dictionary of rows of data to be written to a csv file.
+    """
     fixture = [data[key] for key in ['id', 'name', 'venue_id', 'starting_at', 'result_info']]
 
     for datapoint in ['participants', 'scores', 'xgfixture']:
@@ -95,6 +131,16 @@ def fixture_table(data):
 
 
 def output_data_table(data, function, output_directory='data', duplicate_remove=False):
+    """
+    Outputs incoming data in a dictionary (or dictionaries) of lists as rows for a CSV files.
+    Optionally removes duplicates from the resulting files.
+
+    :param data: Row data to be written to CSV files. Can be a single dictionary or a list of dictionaries.
+    :param function: Function passed through for cleaning and structuring the subset of data.
+    :param output_directory: Directory where the resulting CSV files will be saved.
+    :param duplicate_remove: Flag indicating whether duplicates should be removed after writing. 
+    :return: None
+    """
     if data is not None:
         fixture = function(data)
     else:
@@ -142,53 +188,67 @@ def player_performance_table(data):
     return {'player_performance': rows}
 
 
-def players_table():
-    players = sportmonk.all_players()
-    rows = [
-        [data['id'], data['name'],
-         data['nationality']['name'] if type(data['nationality']) is dict else None,
-         data['position']['name'] if type(data['position']) is dict else None,
-         data['detailedposition']['name'] if type(data['detailedposition']) is dict else None,
-         data['height'], data['weight'],
-         data['date_of_birth'], data['image_path']] for data in players['data']]
-    return {'players': rows}
+def players_table(data):
+    players = data['participants'][0]['players'] + data['participants'][1]['players']
+    rows = []
+    for player in players:
+        row = [
+            player['id'],
+            player['player_id'],
+            player['team_id'],
+            player['player']['name'],
+
+            sportmonk.COUNTRY_LOOKUP.get(player['player']['nationality_id']),
+            sportmonk.TYPES_LOOKUP.get(player['position_id']),
+            sportmonk.TYPES_LOOKUP.get(player['detailed_position_id']),
+
+            player['player']['height'],
+            player['player']['weight'],
+            player['player']['date_of_birth'],
+            player['player']['image_path']
+        ]
+        rows.append(row)
+    return {'squad_players': rows}
+
+
+def export_fixture(game, output_directory='sample_data'):
+    game = sportmonk.fixture_statistics_lookups(game)
+    game = sportmonk.fixture_lineup_detail_lookups(game)
+    game = sportmonk.fixture_lineup_lookups(game)
+
+    output_data_table(game, fixture_table, output_directory=output_directory, duplicate_remove=True)
+    output_data_table(game, event_table, output_directory=output_directory, duplicate_remove=True)
+    output_data_table(game, player_performance_table, output_directory=output_directory, duplicate_remove=True)
+    output_data_table(game, players_table, output_directory=output_directory, duplicate_remove=True)
+
+    return game
 
 
 def test_single_game(fixture_id=19051563):
-    game1 = sportmonk.get_fixtures(fixture_id=fixture_id)['data']
+    game1 = sportmonk.get_fixtures(fixture_id=fixture_id,
+                                   include=['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
+                                            'participants', 'participants.players.player',
+                                            'participants.country',
+                                            'scores', 'periods', 'ballCoordinates', 'xGFixture',
+                                            'formations']
+                                   )['data']
 
-    game1 = sportmonk.fixture_statistics_lookups(game1)
-    game1 = sportmonk.fixture_lineup_detail_lookups(game1)
-    game1 = sportmonk.fixture_lineup_lookups(game1)
-
-    output_data_table(game1, fixture_table, output_directory='sample_data', duplicate_remove=True)
-    output_data_table(game1, event_table, output_directory='sample_data', duplicate_remove=True)
-    output_data_table(game1, player_performance_table, output_directory='sample_data', duplicate_remove=True)
+    game1 = export_fixture(game1)
 
     return game1
 
 
 def test_game_range(date_start='2023-01-01', date_end='2024-06-01'):
     include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
-               'participants',
-               'scores', 'periods', 'ballCoordinates', 'xGFixture', 'formations']
+               'participants', 'participants.players.player',
+               'participants.country',
+               'scores', 'periods', 'ballCoordinates', 'xGFixture',
+               'formations']
     games = sportmonk.get_fixtures(date=date_start, date_range_end=date_end, include=include)
-    variables = {}
     for fixture in games['data']:
-
-        fixture = sportmonk.fixture_statistics_lookups(fixture)
-        fixture = sportmonk.fixture_lineup_detail_lookups(fixture)
-        fixture = sportmonk.fixture_lineup_lookups(fixture)
-
-        output_data_table(fixture, fixture_table, output_directory='sample_data', duplicate_remove=True)
-        output_data_table(fixture, event_table, output_directory='sample_data', duplicate_remove=True)
-        output_data_table(fixture, player_performance_table, output_directory='sample_data', duplicate_remove=True)
+        fixture = export_fixture(fixture)
+        yield fixture
 
 
 if __name__ == '__main__':
-    # games = test_game_range(date_start='2024-02-01', date_end='2024-03-01')
-    # test_game_range()
-    game = test_single_game(18454566)
-    # players_table()
-    # output_data_table(None, players_table, output_directory='sample_data', duplicate_remove=True)
-    event_dict = {}
+    sample = test_single_game(19051608)

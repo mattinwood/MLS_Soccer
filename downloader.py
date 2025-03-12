@@ -14,21 +14,13 @@ def generate_quarters(season=2023):
 
 def download_fixtures_date_range(date_start, date_end):
     include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
-               'participants',
-               'scores', 'periods', 'ballCoordinates', 'xGFixture', 'formations']
+               'formations', 'participants', 'participants.players.player',
+               'scores', 'periods', 'ballCoordinates', 'xGFixture',
+               ]
     games = sportmonk.get_fixtures(date=date_start, date_range_end=date_end, include=include)
-    variables = {}
     for fixture in games['data']:
         try:
-            fixture = sportmonk.fixture_statistics_lookups(fixture)
-            fixture = sportmonk.fixture_lineup_detail_lookups(fixture)
-            fixture = sportmonk.fixture_lineup_lookups(fixture)
-
-            # TODO: Add Ball Coordinates
-
-            data_normalizer.output_data_table(fixture, data_normalizer.fixture_table, output_directory='database', duplicate_remove=True)
-            data_normalizer.output_data_table(fixture, data_normalizer.event_table, output_directory='database', duplicate_remove=True)
-            data_normalizer.output_data_table(fixture, data_normalizer.player_performance_table, output_directory='database', duplicate_remove=True)
+            data = data_normalizer.export_fixture(fixture, 'database')
         except:
             print(f'Error on fixture: {fixture["id"]}')
 
@@ -39,10 +31,8 @@ def backfill_fixtures_by_year(year):
         download_fixtures_date_range(q[0], q[1])
 
 
-def update_players():
-    pass
-
-
 if __name__ == '__main__':
-    # download_fixtures_date_range('2023-03-18', '2023-03-18')
-    backfill_fixtures_by_year(2024)
+    for year in [2022, 2023, 2024]:
+        backfill_fixtures_by_year(year)
+    backfill_fixtures_by_year(2025)
+    # data_normalizer.test_single_game(19051608)  # One-offs for testing

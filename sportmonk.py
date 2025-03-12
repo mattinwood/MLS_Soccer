@@ -14,6 +14,7 @@ def gen_url(endpoint: str,
             product: str = 'football/',
             includes: List[str] = None,
             filters: Dict[str, str] = None,
+            parameters: List[str] = None,
             pagination: str = '') -> str:
     """
     Generate a URL for accessing specific API endpoints.
@@ -22,6 +23,7 @@ def gen_url(endpoint: str,
     :param product: A string representing the API product to access.
     :param includes: A list of strings representing the resources to be included in the API response.
     :param filters: A list of strings specifying the filters to apply in the server-side.
+    :param parameters: A list of strings specifying the parameters to apply in the server-side.
     :param pagination: String to add for additional page results, if necessary.
     :return: A string representing the complete API url.
     """
@@ -30,7 +32,9 @@ def gen_url(endpoint: str,
     if includes:
         url += f'&include={";".join(includes)}'
     if filters:
-        url += f'&include={";".join(includes)}'
+        url += f'&filters={";".join(filters)}'
+    if parameters:
+        url += f'&{"&".join(parameters)}'
     if pagination:
         url += f'&{pagination}'
     return url + '&timezone=America/Chicago'
@@ -62,6 +66,8 @@ def paginated_results(url: str) -> dict:
             r = requests.get(url + '&' + pagination[pagination.find('page='):])
         all_r.append(r.json())
         pagination = r.json().get('pagination', {}).get('next_page')
+        if r.json()['rate_limit']['remaining'] <= 2900:
+            break
         if pagination is None:
             break
     if len(all_r) > 1:
@@ -113,7 +119,7 @@ def get_fixtures(
         team: Optional[str | int] = None,
         date_range_end: Optional[ISODate] = None,
         vs_team: Optional[str | int] = None,
-        include: Optional[str] = None):
+        include: Optional[List[str]] = None):
     """
     Function to retrieve fixture data using a variety of filter options.
     :param fixture_id: Integer of a specific game ID
@@ -127,9 +133,6 @@ def get_fixtures(
 
     if fixture_id is not None:
         endpoint = f'fixtures/{fixture_id}'
-        include = ['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
-                   'participants',
-                   'scores', 'periods', 'ballCoordinates', 'xGFixture', 'formations']
     elif all(var is None for var in [date, team, date_range_end, vs_team]):
         endpoint = 'fixtures'
     elif all(var is None for var in [team, date_range_end, vs_team]) and date is not None:
@@ -214,15 +217,6 @@ def get_player(search=None):
                         ).json()
 
 
-def all_players():
-    players = paginated_results(gen_url('players', product='core/',
-                                includes=['nationality', 'city', 'position', 'detailedPosition',
-                                          'transfers', 'transfers.fromTeam', 'transfers.toTeam',
-                                          'pendingTransfers',  'pendingTransfers.fromTeam', 'pendingTransfers.toTeam'
-                                          ]))
-    return players
-
-
 def update_lookup(file: dict, file_nm: str):
     """
     Writes a lookup dictionary object to a JSON file for future retrieval.
@@ -266,34 +260,27 @@ def update_type_lookup():
     update_lookup(type_lookup, 'types')
 
 
-try:
-    TYPES_LOOKUP = read_lookup('types')
-except FileNotFoundError:
-    update_type_lookup()
-    TYPES_LOOKUP = read_lookup('types')
+def update_country_lookup():
+    """
+    This function is responsible for updating the type lookup dictionary.
+
+    It fetches all types through a paginated request to an API end point and then maps the id and names of each type
+    to create a dictionary. This dictionary is then updated as the type lookup dictionary of the program.
+    """
+    all_types = paginated_results(gen_url('countries', product='core/'))
+    type_lookup = {lookup['id']: lookup['name'] for lookup in all_types['data']}
+    update_lookup(type_lookup, 'countries')
+
+
+update_type_lookup()
+TYPES_LOOKUP = read_lookup('types')
+update_country_lookup()
+COUNTRY_LOOKUP = read_lookup('countries')
 
 
 if __name__ == '__main__':
     """
     In Place for testing various endpoints during development. 
     """
-    # matchups = get_fixtures(team='fire', vs_team='cincinnati')
+    update_type_lookup()
 
-    # one_game = get_fixtures(fixture_id=19051528)['data']
-    # one_game = fixture_statistics_lookups(one_game)
-    # one_game = fixture_lineup_detail_lookups(one_game)
-    # one_game = fixture_lineup_lookups(one_game)
-    #
-    # games = get_fixtures(date='2024-05-25')
-    # shaqiri = get_player('Shaqiri')
-    # guti = get_player('Brian Gutierrez')
-    # p = all_players()
-    t = paginated_results(gen_url('teams', includes=[
-        'country', 'coaches.coach',
-        # 'seasons',
-        'activeSeasons',
-        'activeSeasons.stages',
-        # 'sidelinedHistory',
-        # 'statistics', 'trophies', 'socials'
-    ]))
-    # v = paginated_results(gen_url('venues', includes=['country', 'city']))
