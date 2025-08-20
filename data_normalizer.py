@@ -201,6 +201,7 @@ def players_table(data):
             sportmonk.COUNTRY_LOOKUP.get(player['player']['nationality_id']),
             sportmonk.TYPES_LOOKUP.get(player['position_id']),
             sportmonk.TYPES_LOOKUP.get(player['detailed_position_id']),
+            player['jersey_number'],
 
             player['player']['height'],
             player['player']['weight'],
@@ -226,11 +227,13 @@ def export_fixture(game, output_directory='sample_data'):
 
 def test_single_game(fixture_id=19051563):
     game1 = sportmonk.get_fixtures(fixture_id=fixture_id,
-                                   include=['lineups', 'events', 'statistics', 'timeline', 'lineups.details',
-                                            'participants', 'participants.players.player',
-                                            'participants.country',
-                                            'scores', 'periods', 'ballCoordinates', 'xGFixture',
-                                            'formations']
+                                   include=[
+                                            'lineups', 'events', 'statistics',
+                                            'timeline',] # 'lineups.details',
+                                            # 'participants', 'participants.players.player',
+                                            # 'participants.country',
+                                            # 'scores', 'periods', 'ballCoordinates', 'xGFixture',
+                                            # 'formations']
                                    )['data']
 
     game1 = export_fixture(game1)
@@ -251,4 +254,4 @@ def test_game_range(date_start='2023-01-01', date_end='2024-06-01'):
 
 
 if __name__ == '__main__':
-    sample = test_single_game(19051608)
+    sample = test_single_game(19322669)

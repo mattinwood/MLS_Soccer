@@ -66,7 +66,7 @@ def paginated_results(url: str) -> dict:
             r = requests.get(url + '&' + pagination[pagination.find('page='):])
         all_r.append(r.json())
         pagination = r.json().get('pagination', {}).get('next_page')
-        if r.json()['rate_limit']['remaining'] <= 2900:
+        if r.json()['rate_limit']['remaining'] <= 100:
             break
         if pagination is None:
             break
@@ -217,6 +217,15 @@ def get_player(search=None):
                         ).json()
 
 
+def get_league_standings(league=779):
+    """
+    Returns the current standings of a specific league
+    :param league: An integer to represent the league being pulled. 779 = MLS
+    :return: A JSON/Dictionary of the current game standings.
+    """
+    return requests.get(gen_url(f'standings/live/leagues/{league}', includes=['participant', 'details'])).json()
+
+
 def update_lookup(file: dict, file_nm: str):
     """
     Writes a lookup dictionary object to a JSON file for future retrieval.
@@ -282,5 +291,6 @@ if __name__ == '__main__':
     """
     In Place for testing various endpoints during development. 
     """
-    update_type_lookup()
+    get_league_standings()
+    # update_type_lookup()
 
